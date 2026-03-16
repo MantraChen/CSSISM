@@ -9,10 +9,6 @@ A SLAM backend receives high-frequency 3D map points. Points are stored to suppo
 - **Rapid, thread-safe nearest-neighbor queries** (e.g., for loop closure).
 - **Minimal memory overhead** (succinct representation where applicable).
 
-## Project Policy
-
-**For training project ability, the entire codebase is required to be in English only. No Chinese is allowed in source code, comments, or commit messages.**
-
 ## What This Repo Provides
 
 1. **Mock frontend simulator** – Generates 3D coordinates `(x, y, z)` and descriptor vectors at **60 Hz**.
