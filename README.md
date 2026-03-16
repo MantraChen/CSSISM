@@ -13,11 +13,15 @@ A SLAM backend receives high-frequency 3D map points. Points are stored to suppo
 
 **For training project ability, the entire codebase is required to be in English only. No Chinese is allowed in source code, comments, or commit messages.**
 
-## What This Repo Provides (Scaffold)
+## What This Repo Provides
 
 1. **Mock frontend simulator** – Generates 3D coordinates `(x, y, z)` and descriptor vectors at **60 Hz**.
-2. **Benchmarking suite** – Measures read/write throughput and memory usage of the spatial index.
+2. **Benchmarking suite** – Measures read/write throughput and memory usage of different spatial indexes.
 3. **gRPC server** – Basic service for inserting points and querying the map (e.g., nearest neighbors).
+4. **Concurrent k-d tree index** – `ConcurrentMapIndex` built on top of `kiddo` for high-throughput kNN queries.
+5. **Concurrent succinct octree** – `ConcurrentOctree` with:
+   - **Succinct topology** encoded as a bit-vector (`SuccinctOctreeLayout`) separating structure from payload.
+   - **Immutable snapshots** of point storage for lock-free read scans while writes continue in the background.
 
 ## Building and Running
 
