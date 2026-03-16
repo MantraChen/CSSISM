@@ -4,9 +4,11 @@
 //! memory-efficient storage (f32 coordinates, compact descriptors).
 
 pub mod index;
+pub mod octree;
 pub mod types;
 
 pub use index::ConcurrentMapIndex;
+pub use octree::ConcurrentOctree;
 pub use types::{MapPoint, PointId};
 
 /// Generated gRPC types (built from proto/map.proto).
