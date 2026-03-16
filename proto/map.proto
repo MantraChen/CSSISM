@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package map;
+
+// Single 3D map point with optional descriptor for loop closure.
+message MapPoint {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  bytes descriptor = 4;  // e.g. 256-bit or 128-byte descriptor
+  uint64 id = 5;
+}
+
+// Batch insert for high-throughput ingestion.
+message InsertPointsRequest {
+  repeated MapPoint points = 1;
+}
+
+message InsertPointsResponse {
+  uint32 inserted = 1;
+}
+
+// Nearest-neighbor query (e.g. for loop closure).
+message NearestQueryRequest {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  uint32 k = 4;  // number of neighbors
+}
+
+message NearestQueryResponse {
+  repeated MapPoint neighbors = 1;
+}
+
+service MapService {
+  rpc InsertPoints(InsertPointsRequest) returns (InsertPointsResponse);
+  rpc NearestNeighbors(NearestQueryRequest) returns (NearestQueryResponse);
+}

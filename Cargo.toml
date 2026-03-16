@@ -1,0 +1,48 @@
+[package]
+name = "cssism"
+version = "0.1.0"
+edition = "2021"
+description = "Concurrent Succinct Spatial Index for SLAM Mapping"
+
+[dependencies]
+# Spatial index: fast 3D k-d tree for nearest-neighbor
+kiddo = "5"
+# Async runtime and gRPC
+tokio = { version = "1", features = ["full"] }
+tonic = "0.12"
+prost = "0.13"
+# Concurrency
+parking_lot = "0.12"
+# Serialization / descriptors
+serde = { version = "1", features = ["derive"] }
+# Rand for simulator
+rand = "0.8"
+# Memory / stats
+libc = "0.2"
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "simulator"
+path = "src/bin/simulator.rs"
+
+[lib]
+name = "cssism"
+path = "src/lib.rs"
+
+[[bench]]
+name = "index_throughput"
+harness = false
+
+[[bench]]
+name = "memory_usage"
+harness = false
