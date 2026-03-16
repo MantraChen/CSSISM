@@ -1,9 +1,11 @@
 //! Concurrent succinct octree for 3D map points.
 //!
-//! This implementation focuses on a compact in-memory layout and thread-safe access.
-//! For now, nearest-neighbor queries are implemented as a linear scan over points,
-//! using the octree structure as a scaffold for future pruning optimizations.
+//! The octree topology is stored in a succinct bit-vector form, separating
+//! structure from payload. For now, nearest-neighbor queries are implemented
+//! as a linear scan over points; the succinct layout provides a compact,
+//! cache-friendly representation that can be used for future spatial pruning.
 
+use bitvec::prelude::*;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -35,19 +37,90 @@ impl OctreeNode {
     }
 }
 
+/// Succinct 8-ary tree topology backed by a bit-vector.
+///
+/// Nodes are stored in breadth-first (level-order) sequence. For each node i:
+/// - bits[i] == true  -> internal node with exactly 8 children
+/// - bits[i] == false -> leaf node with no children
+///
+/// Children of internal nodes are stored implicitly rather than via pointers.
+/// If `rank1(i)` is the number of internal nodes in [0, i), then the first
+/// child of node i (assuming it is internal) is at index:
+///     1 + 8 * rank1(i)
+///
+/// This layout is succinct and highly cache-friendly, and supports O(1)
+/// navigation given rank/select operations on the bit-vector.
+#[derive(Clone, Debug, Default)]
+pub struct SuccinctOctreeLayout {
+    bits: BitVec<u64, Lsb0>,
+}
+
+impl SuccinctOctreeLayout {
+    pub fn new() -> Self {
+        Self {
+            bits: BitVec::new(),
+        }
+    }
+
+    /// Build a layout from an iterator of node flags (internal = true).
+    pub fn from_internal_flags<I: IntoIterator<Item = bool>>(flags: I) -> Self {
+        let mut bits = BitVec::<u64, Lsb0>::new();
+        bits.extend(flags);
+        Self { bits }
+    }
+
+    /// Total number of nodes encoded in the layout.
+    pub fn len(&self) -> usize {
+        self.bits.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bits.is_empty()
+    }
+
+    /// Returns true if the node at index i is internal.
+    pub fn is_internal(&self, i: usize) -> bool {
+        self.bits.get(i).copied().unwrap_or(false)
+    }
+
+    /// Number of internal nodes in [0, i).
+    #[inline]
+    pub fn rank1(&self, i: usize) -> usize {
+        if i == 0 {
+            0
+        } else {
+            self.bits[..i].count_ones()
+        }
+    }
+
+    /// Returns the index of the first child of node i if it is internal.
+    /// Children occupy indices [first_child, first_child + 8).
+    pub fn first_child_index(&self, i: usize) -> Option<usize> {
+        if !self.is_internal(i) {
+            return None;
+        }
+        let r = self.rank1(i);
+        Some(1 + 8 * r)
+    }
+}
+
 /// Thread-safe octree index over 3D points.
 ///
-/// The octree structure is prepared for spatial subdivision, but the initial
-/// implementation uses a linear scan for nearest-neighbor queries in order to
-/// keep the concurrency and memory model simple and robust.
+/// The succinct layout encodes the tree topology, while point storage is kept
+/// in a separate contiguous array. The current implementation uses a linear
+/// scan for queries, using the octree only as a compact structural scaffold.
 pub struct ConcurrentOctree {
     next_id: AtomicU64,
 
     /// All points stored in the index.
     points: RwLock<Vec<MapPoint>>,
 
-    /// Optional spatial hierarchy (currently used only as a placeholder).
+    /// Optional spatial hierarchy in explicit node form. This can be used to
+    /// derive or validate the succinct layout.
     nodes: RwLock<Vec<OctreeNode>>,
+
+    /// Succinct bit-vector representation of the node topology.
+    layout: RwLock<SuccinctOctreeLayout>,
 
     /// Maximum number of points in a leaf before considering a split.
     pub max_points_per_leaf: u16,
@@ -79,10 +152,14 @@ impl ConcurrentOctree {
             point_end: 0,
         };
 
+        // At creation time, only the root exists and is a leaf.
+        let layout = SuccinctOctreeLayout::from_internal_flags([false]);
+
         Self {
             next_id: AtomicU64::new(0),
             points: RwLock::new(Vec::new()),
             nodes: RwLock::new(vec![root]),
+            layout: RwLock::new(layout),
             max_points_per_leaf: 64,
             max_depth: 12,
         }
@@ -115,6 +192,11 @@ impl ConcurrentOctree {
         }
 
         (n, start_id)
+    }
+
+    /// Returns the succinct topology layout (read-only snapshot).
+    pub fn layout_snapshot(&self) -> SuccinctOctreeLayout {
+        self.layout.read().clone()
     }
 
     /// Brute-force k-nearest neighbors to (x, y, z).

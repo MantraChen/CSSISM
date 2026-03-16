@@ -19,6 +19,8 @@ serde = { version = "1", features = ["derive"] }
 rand = "0.8"
 # Memory / stats
 libc = "0.2"
+ # Succinct bit-vector support for octree topology
+ bitvec = "1"
 
 [build-dependencies]
 tonic-build = "0.12"
