@@ -8,6 +8,7 @@
 use bitvec::prelude::*;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use crate::types::{MapPoint, PointId};
 
@@ -112,8 +113,11 @@ impl SuccinctOctreeLayout {
 pub struct ConcurrentOctree {
     next_id: AtomicU64,
 
-    /// All points stored in the index.
+    /// Live points buffer, used for writes.
     points: RwLock<Vec<MapPoint>>,
+
+    /// Immutable snapshot used by readers for lock-free scans.
+    points_snapshot: RwLock<Arc<Vec<MapPoint>>>,
 
     /// Optional spatial hierarchy in explicit node form. This can be used to
     /// derive or validate the succinct layout.
@@ -158,6 +162,7 @@ impl ConcurrentOctree {
         Self {
             next_id: AtomicU64::new(0),
             points: RwLock::new(Vec::new()),
+            points_snapshot: RwLock::new(Arc::new(Vec::new())),
             nodes: RwLock::new(vec![root]),
             layout: RwLock::new(layout),
             max_points_per_leaf: 64,
@@ -172,6 +177,9 @@ impl ConcurrentOctree {
 
         let mut points = self.points.write();
         points.push(point);
+        // Rebuild snapshot so new readers see an up-to-date immutable view.
+        let snapshot = Arc::new(points.clone());
+        *self.points_snapshot.write() = snapshot;
         id
     }
 
@@ -190,6 +198,9 @@ impl ConcurrentOctree {
             p.id = id;
             points.push(p);
         }
+        // Single snapshot rebuild amortized over the whole batch.
+        let snapshot = Arc::new(points.clone());
+        *self.points_snapshot.write() = snapshot;
 
         (n, start_id)
     }
@@ -205,7 +216,10 @@ impl ConcurrentOctree {
     /// baseline for correctness and can be used to validate future optimized
     /// octree-based search implementations.
     pub fn nearest(&self, x: f32, y: f32, z: f32, k: usize) -> Vec<MapPoint> {
-        let pts = self.points.read();
+        // Take a cheap clone of the current immutable snapshot and then drop locks,
+        // allowing writers to continue updating the live buffer concurrently.
+        let snapshot = self.points_snapshot.read().clone();
+        let pts: &Vec<MapPoint> = &snapshot;
         if pts.is_empty() || k == 0 {
             return Vec::new();
         }
